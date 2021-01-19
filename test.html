@@ -1,0 +1,501 @@
+<!DOCTYPE html>
+<html>
+    <head>
+        <script>
+
+
+
+            class Candy extends HTMLElement {
+                loaded = false;
+                name;
+                className;
+                classType;
+                static view=""
+                constructor() {
+                    super();
+                    this.className = this.constructor.name;
+                    this.classType = eval(this.className+".prototype")
+                    //auto bind this for obj methods
+                    for(let prop of Object.getOwnPropertyNames(this.classType)){
+                        this[prop] = this[prop].bind(this);
+                    }
+                    this.shadow = this.attachShadow({mode:'open'});
+                    this.ss = document.createElement("slot");
+                    this.shadow.appendChild(this.ss);
+                    
+                    if(!this.loaded)
+                    {
+                        
+                        setTimeout(() => {
+                            //alert(this.hasAttribute("view"));
+                            if(this.hasAttribute("view")){
+                                this.classType.view=this.innerHTML;
+                                this.innerHTML="";
+                            }
+                            else if(this.classType.view){
+                                this.shadow.innerHTML = this.view + this.shadow.innerHTML;
+                            }
+                            this.name=this.getAttribute("name");
+                            this[this.name] = this;
+                            if(!window.view) window.view= {};
+                            window.view[this.name] = this;
+                            this.prepareChilds();
+                            this.onLoaded();
+                            this.draw();
+                        
+                        });
+                        this.loaded=true;
+                    }
+                    
+                    this.ss.addEventListener('slotchange',this.innerHTMLUpdated);
+                }
+
+                prepareChilds(){
+                    this.setElementsAsProps(this.childNodes);
+                             
+                }
+
+                static register(){
+                    let className =  this.toString().split ('(' || /s+/)[0].split (' ' || /s+/)[1];
+                    let classNameLower = className.toLowerCase();
+                    if(!customElements.get(classNameLower+"-js")){
+                        //console.log(classNameLower+"-js",className);
+                        customElements.define(classNameLower+"-js", eval(className));
+                    }
+                }
+
+                onLoaded(){
+                    
+                }
+
+                processScripts(scripts,context){
+                    return scripts.replace(/{(.*?)}/g,(match, script, offset, string)=> {
+                                                     
+                        let result = this.processScript(script,context);
+                        
+                        return result;
+                    });
+                }
+
+                processScript(script,context){
+                    try{
+                        let exec = function() { return eval(script); }.call(context);
+                        return exec;
+                    }catch(err){
+                        console.error(err);
+                    }
+                    return "";
+                }
+
+                isCandyScriptTag(element){
+                    return element.hasAttribute("candy");
+                }
+
+                isFunctionScriptTag(element){
+                    return element.hasAttribute("function");
+                }
+
+                processScriptTag(element){
+                    if(element.innerHTML && this.isCandyScriptTag(element)){
+                                
+                        let div=document.createElement("div");
+                        if(this.isFunctionScriptTag(element))
+                            div.script="(()=>{"+element.innerHTML+"})()";
+                        else
+                            div.script=element.innerHTML;
+                        element.innerHTML="";
+                        div.update = (value)=>{
+                            if(div.innerHTML!=value && value!=undefined){
+                                div.innerHTML  = value;
+                                let ele = div;
+                                while(ele.parentNode){
+                                    if(ele.parentNode instanceof Candy)
+                                        ele.parentNode.prepareChilds();
+                                    if(ele==ele.parentNode) break;
+                                    ele = ele.parentNode;
+                                }
+                            }
+                        }
+                        div.refresh = ()=>{
+                            let value = this.processScript(div.script,div.model);
+                            if(div.script!=value){
+                                div.update(value);
+                            }
+                        };
+                        element.parentNode.replaceChild(div,element)
+                    }
+                }
+
+                processTextNode(element){
+                    if(element.nodeValue && element.nodeValue.indexOf("{")>-1){
+                        element.scripts=element.nodeValue;
+                        element.update = (value)=>{
+                            element.nodeValue  = value;
+                        }
+                        element.refresh = ()=>{
+                            let value = this.processScripts(element.scripts,element.model);
+                            if(element.scripts!=value){
+                                element.update(value);
+                            }
+                        };
+                    }
+                }
+
+                processAttribute(attr,element){
+                    if(attr.nodeValue && attr.nodeValue.indexOf("{")>-1){
+                        if(attr.nodeValue[0]=="{" && attr.nodeValue[attr.nodeValue.length-1]=="}")
+                            attr.script = attr.value;
+                        else
+                            attr.scripts=attr.value;
+                        let found = false;
+                        for(let prop in element){
+                            if(prop.toLowerCase()==attr.name){
+                                found=true;
+                                attr.realName = prop;
+                                break;
+                            }
+                        }
+                        if(!found){
+                             console.error(`${attr.name} not found in ${element.constructor.name}`)
+                        }else{
+                            attr.update = (value)=>{
+                                element[attr.realName]  = value;
+                            }
+                            
+                            if(attr.scripts){
+                                attr.refresh = ()=>{
+                                    let value = this.processScripts(attr.scripts,attr.model);
+                                    if(attr.scripts!=value){
+                                        attr.update(value);
+                                    }
+                                };
+                            }
+                            else{
+                                attr.refresh = ()=>{
+                                    let value = this.processScript(attr.script,attr.model);
+                                    if(attr.script!=value){
+                                        attr.update(value);
+                                    }
+                                };
+                            }
+                        }
+                    }
+                }
+
+                checkIfScriptCanRunInCurrentObject(script){
+                    let canExec=true;
+                    let scriptWithoutStrings = script.replace(/`[^`]+`/g,"");
+                    scriptWithoutStrings = scriptWithoutStrings.replace(/"[^"]+"/g,"");
+                    scriptWithoutStrings = scriptWithoutStrings.replace(/'[^']+'/g,"");
+                    let match;
+                    var myRegexp =/this\.([a-zA-z$_0-9]+)/g;
+                    while (match = myRegexp.exec(scriptWithoutStrings)) {
+                        if(!this[match[1]]){
+                            canExec=false;
+                            break;
+                        }
+                    }
+                    return canExec;
+                }
+
+                processElementIfHasScript(element){
+                    
+                    if(!element.model ){
+                        if(element.script || element.scripts){
+                            let script = element.script||element.scripts;
+                            let canExec = this.checkIfScriptCanRunInCurrentObject(script);
+                            if(canExec){
+                                element.model=this;
+                                element.refresh();
+                            }
+                        }
+                    }else{
+                        //if(element.model == this) element.refresh();
+                    }
+                }
+
+                setElementsAsProps(nodeArr){
+                    for (let i = 0; i < nodeArr.length; i++) {
+                        let element = nodeArr[i];
+                        if(element.attributes){
+                            let nameAttr = element.getAttribute("name");
+                            
+                            if(nameAttr && this[nameAttr] != element){    
+                                //console.log(this,nameAttr,element,element.attributes)
+                            
+                                this[nameAttr] = element;
+                                window[nameAttr] = element;
+                            }
+                        }
+                    }
+
+
+                    for (let i = 0; i < nodeArr.length; i++) {
+                        let element = nodeArr[i];
+                        if(element.attributes){
+                            
+                            for(let j=0;j<element.attributes.length;j++){
+                                let attr = element.attributes[j];
+                                this.processAttribute(attr,element);
+                                this.processElementIfHasScript(attr);
+                            }
+                        }
+                        if( element instanceof HTMLScriptElement){
+                            
+                            this.processScriptTag(element);
+                        }else if(element instanceof Text){
+                            this.processTextNode(element);
+                        }
+                        this.processElementIfHasScript(element);
+                        if(element.childNodes){
+                            this.setElementsAsProps(element.childNodes);
+                        }
+                    }
+                }
+
+                prepareScriptTags(nodeArr){
+                    
+                    for (let i = 0; i < nodeArr.length; i++) {
+                        let element = nodeArr[i];
+                        
+                        if( element instanceof HTMLScriptElement){
+                            
+                            this.processScriptTag(element);
+                        }
+                        if(element.childNodes){
+                            this.prepareScriptTags(element.childNodes);
+                        }
+                    }
+                }
+
+                onInnerHtmlUpdated(){
+
+                }
+                innerHTMLUpdated=(e)=>{
+                    //console.log(e);
+                    //define childs if not defiend
+                    //create props for childs with names
+                    
+                    /*
+                    if(!this.loaded)
+                    {
+                        this.name=this.getAttribute("name");
+                        setTimeout(() => {
+                            this.onLoaded();
+                            this.draw();
+                        
+                        });
+                        this.loaded=true;
+                    }
+                    this.onInnerHtmlUpdated();
+                    this.setElementsAsProps(this.ss.assignedNodes());
+                    */
+                    
+                    this.prepareScriptTags(this.ss.assignedNodes());
+                }
+
+                connectedCallback() {
+
+                }
+
+                draw() {
+                    
+                }
+
+                forceRedraw(){
+                    this.draw();
+                    for (let i = 0; i < this.childNodes.length; i++) {
+                        let element =  this.childNodes[i];
+                        if(element instanceof Candy)
+                            element.forceRedraw();
+                        else if (element.refresh){
+                            element.refresh();
+                        }
+                    }
+                }
+
+            }
+            
+            class ToDo extends Candy{
+                model = ["task0","task10"];
+                constructor(){
+                    super();
+                }
+                onLoaded(){
+                    
+                    this.model.push("task1");
+                    this.model.push("task2");
+                    this.model.push("task3");
+                    this.forceRedraw();
+                }
+
+                addTask(task){
+                    this.model.push(task);
+                    this.forceRedraw();
+                }
+
+                deleteTask(index){
+                    this.model.splice(index,1);
+                    this.forceRedraw();
+                }
+
+                draw() {
+                    
+                }
+            }
+
+            class ToDoList extends Candy{
+                tasks;
+                onInnerHtmlUpdated(){
+                   
+                }
+                draw() {
+                    //if( this.tasks)
+                        //this.innerHTML = this.tasks.join();
+                }
+            }
+
+            class ToDoItem extends Candy{
+                array;
+                onLoaded(){
+
+                }
+                draw() {
+                    
+                }
+                onDeleteTask;
+                deleteTask(){
+                    this.onDeleteTask(this.id);
+                }
+            }
+
+            class ToDoForm extends Candy{
+                model=""
+                constructor(){
+                    super();
+                }
+                taskTitleChangned(e){
+                    this.model=e.target.value;
+                }
+                addTask(){
+                    
+                    this.onAddTask(this.model);
+                }
+
+                draw() {
+                    
+                }
+
+                onAddTask;
+            }
+
+            class ForEach extends Candy{
+                array;
+                childs=[];
+                onLoaded(){
+                    alert("for loaded")
+
+                    for(let i=0;i<this.childNodes.length;i++){
+                        this.childs.push(this.childNodes[i].cloneNode(true));
+                    }
+                    this.innerHTML="";
+                }
+                draw() {
+                    alert("ddS")
+                    this.innerHTML="";
+                    for(let item of this.array){
+                        for(let child of this.childs){
+                            let newChild = child.cloneNode(true);
+                            this.appendChild(newChild);
+                            newChild.item=item;
+                        }
+                    }
+                }
+            }
+
+
+            function updateBackground(){
+                todo2.style.backgroundColor="red";
+            }
+            
+
+            function OnLoaded(callback){
+                setTimeout(callback);
+            }
+
+
+            var data = ["task9","task10"];
+
+            Candy.register();
+
+            ToDoList.register();
+            ToDo.register();
+            ToDoForm.register();
+            
+            ForEach.register();
+            ToDoItem.register();
+        </script>
+    </head>
+    <body>
+        <Todo-js name="todo2" view >
+            <h1>Welcome</h1>
+        </Todo-js>
+        <Candy-js>
+            <Todo-js name="todo2" >
+                <script candy>
+                    console.log(ToDo.view)
+                </script>
+                <h2 name="h2">Todo</h2>{this.todo2.model.join()}<br/>
+                <ToDoList-js name="todolist" tasks="{this.todo2.model}">
+                    <script candy function>
+                            if( this.todolist.tasks.length>7)
+                                return "aa";
+                            else 
+                                return "cc"
+                           
+                    </script>
+                    <script candy function>
+                            var str = "";
+                            for(var i=0;i< this.todolist.tasks.length;i++){
+                                str += this.todolist.tasks[i];
+                            }
+                            return str;
+                        
+                    </script>
+                    <script candy>
+                        
+                        this.todolist.tasks.map((item,i)=>{
+                           return `<br/>
+                           <ToDoItem-js name="todoitem${i}" id="${i}"" onDeleteTask="{this.todo2.deleteTask}">
+                               
+                               a ${item} bb<input type="text" value="${item}" />
+                               <button onclick="{this.todoitem${i}.deleteTask}"  >Delete</button>
+                               <br/>
+                           </ToDoItem-js>`;
+                       })
+
+                       
+                    </script>
+                </ToDoList-js>
+                
+                <ToDoForm-js name="todoform" onAddTask="{this.todo2.addTask}">
+                    <input type="text" onchange="{this.todoform.taskTitleChangned}" /><br/>
+                    <button onclick="{this.todoform.addTask}"  >Add</button>
+                    <button onclick="{()=>updateBackground()}"  >Add</button>
+                </ToDoForm-js>
+                <Script candy>
+                    h2.innerHTML="aaa";
+                    updateBackground();
+                    
+                </Script>
+            </ToDo-js>
+        </Candy-js>
+
+        <script>
+            
+            //Candy.obj.innerHTMLUpdated(null);
+            //console.log(Candy.obj.ss.assignedNodes())
+        
+        </script>
+    </body>
+</html>
