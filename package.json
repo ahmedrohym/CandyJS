@@ -1,0 +1,11 @@
+{
+  "name": "candyjs",
+  "version": "0.2.0",
+  "description": "A tiny, dependency-free UI library built on Web Components.",
+  "main": "candy.js",
+  "files": ["candy.js"],
+  "scripts": {
+    "test": "node --test test/*.test.js"
+  },
+  "license": "MIT"
+}
