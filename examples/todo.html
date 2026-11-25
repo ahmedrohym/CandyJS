@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>CandyJS · Todo</title>
+  <script src="../candy.js"></script>
+  <style>
+    body { font-family: system-ui, sans-serif; background: #f6f3fb; margin: 0; padding: 40px 16px; }
+    todo-app-js { display: block; max-width: 480px; margin: auto; background: #fff; border-radius: 12px; padding: 24px; box-shadow: 0 4px 20px #0001; }
+    h1 { margin: 0 0 16px; color: #c2185b; }
+    form { display: flex; gap: 8px; }
+    input[type=text] { flex: 1; padding: 8px 10px; border: 1px solid #ccc; border-radius: 6px; }
+    button { padding: 6px 12px; border: 1px solid #ccc; background: #fff; border-radius: 6px; cursor: pointer; }
+    button:disabled { opacity: .5; cursor: default; }
+    button.active { background: #c2185b; color: #fff; border-color: #c2185b; }
+    .item { display: flex; align-items: center; gap: 8px; padding: 8px 0; border-bottom: 1px solid #eee; }
+    .item span { flex: 1; }
+    .item.done span { text-decoration: line-through; color: #999; }
+    .empty { color: #999; text-align: center; }
+    footer { display: flex; gap: 6px; align-items: center; margin-top: 16px; }
+    footer .count { flex: 1; color: #666; }
+  </style>
+</head>
+<body>
+  <todo-app-js></todo-app-js>
+
+  <script>
+    class TodoForm extends Candy {
+      state = { text: '' };
+      onAdd = null;                       // callback passed by the parent
+      static template = `
+        <form onsubmit="{this.submit}">
+          <input type="text" placeholder="What needs doing?"
+                 value="{this.state.text}"
+                 oninput="{this.state.text = event.target.value}">
+          <button disabled="{!this.state.text.trim()}">Add</button>
+        </form>`;
+      submit(event) {
+        event.preventDefault();
+        const text = this.state.text.trim();
+        if (!text) return;
+        this.onAdd(text);
+        this.state.text = '';
+      }
+    }
+
+    class TodoItem extends Candy {
+      todo = null;
+      onRemove = null;
+      static template = `
+        <div class="item {this.todo.done ? 'done' : ''}">
+          <input type="checkbox" checked="{this.todo.done}"
+                 onchange="{this.todo.done = event.target.checked}">
+          <span>{this.todo.text}</span>
+          <button onclick="{this.onRemove}" title="Delete">✕</button>
+        </div>`;
+    }
+
+    class TodoApp extends Candy {
+      state = {
+        filter: 'all',
+        todos: [
+          { text: 'Try CandyJS', done: true },
+          { text: 'Build something sweet', done: false },
+        ],
+      };
+      static template = `
+        <h1>Todos</h1>
+        <todo-form-js onadd="{this.add}"></todo-form-js>
+
+        <template each="{this.visible()}" as="todo">
+          <todo-item-js todo="{todo}" onremove="{() => this.remove(todo)}"></todo-item-js>
+        </template>
+        <template if="{this.visible().length === 0}">
+          <p class="empty">Nothing here.</p>
+        </template>
+
+        <footer>
+          <span class="count">{this.remaining()} left</span>
+          <template each="{['all', 'active', 'done']}" as="f">
+            <button class="{this.state.filter === f ? 'active' : ''}"
+                    onclick="{this.state.filter = f}">{f}</button>
+          </template>
+          <button hidden="{!this.state.todos.some(t => t.done)}" onclick="{this.clearDone}">Clear done</button>
+        </footer>`;
+
+      add(text) { this.state.todos.push({ text, done: false }); }
+      remove(todo) { this.state.todos.splice(this.state.todos.indexOf(todo), 1); }
+      clearDone() { this.state.todos = this.state.todos.filter(t => !t.done); }
+      remaining() { return this.state.todos.filter(t => !t.done).length; }
+      visible() {
+        const { todos, filter } = this.state;
+        if (filter === 'active') return todos.filter(t => !t.done);
+        if (filter === 'done') return todos.filter(t => t.done);
+        return todos;
+      }
+    }
+
+    TodoForm.register('todo-form-js');
+    TodoItem.register('todo-item-js');
+    TodoApp.register('todo-app-js');
+  </script>
+</body>
+</html>

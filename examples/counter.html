@@ -1,0 +1,24 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>CandyJS · Counter</title>
+  <script src="../candy.js"></script>
+  <script>
+    // Components can be declared before the markup that uses them.
+    class Counter extends Candy {
+      state = { count: 0 };
+    }
+    Counter.register();   // -> <counter-js>
+  </script>
+</head>
+<body>
+  <!-- The template can also be written inline, as the component's children. -->
+  <counter-js>
+    <button onclick="{this.state.count--}">−</button>
+    <strong>{this.state.count}</strong>
+    <button onclick="{this.state.count++}">+</button>
+    <p>{this.state.count % 2 === 0 ? 'even' : 'odd'}</p>
+  </counter-js>
+</body>
+</html>
